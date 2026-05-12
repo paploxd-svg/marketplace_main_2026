@@ -1,16 +1,57 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import login, authenticate, logout
 from django.contrib.auth.decorators import login_required
+from django.core.paginator import Paginator
+from django.db.models import Q
 from django.http import HttpResponseForbidden
 from .forms import ProductForm
 from .forms import RegisterForm
 from .models import Product
-from .models import Cart, CartItem
-
+from .models import Cart, CartItem, Category
 
 def home(request):
-    products = Product.objects.select_related('owner').prefetch_related('categories').all()
-    return render(request, 'store/home.html', {'products': products})
+
+    query = request.GET.get('q')
+    category_id = request.GET.get('category')
+
+    products = Product.objects.select_related(
+        'owner'
+    ).prefetch_related(
+        'categories'
+    ).all()
+
+    # =========================
+    # 🔎 Busqueda
+    # =========================
+    if query:
+        products = products.filter(
+            Q(name__icontains=query) |
+            Q(description__icontains=query)
+        )
+
+    # =========================
+    # 🏷️ Filtro categoria
+    # =========================
+    if category_id:
+        products = products.filter(
+            categories__id=category_id
+        )
+
+    # =========================
+    # 📄 Paginacion
+    # =========================
+    paginator = Paginator(products, 6)
+
+    page_number = request.GET.get('page')
+
+    page_obj = paginator.get_page(page_number)
+
+    categories = Category.objects.all()
+
+    return render(request, 'store/home.html', {
+        'page_obj': page_obj,
+        'categories': categories
+    })
 
 
 def register(request):
@@ -57,7 +98,6 @@ def dashboard(request):
     return render(request, 'store/dashboard.html', {
         'products': products
     })
-
 
 # =========================
 # ➕ Crear producto
@@ -122,9 +162,11 @@ def product_delete(request, pk):
 # =========================
 @login_required
 def cart_detail(request):
-    cart = Cart.objects.get(user=request.user)
+    cart, created = Cart.objects.get_or_create(
+        user=request.user
+    )
 
-    return render(request, 'marketplace/cart_detail.html', {
+    return render(request, 'store/cart_detail.html', {
         'cart': cart
     })
 
@@ -134,7 +176,9 @@ def cart_detail(request):
 # =========================
 @login_required
 def add_to_cart(request, product_id):
-    cart = Cart.objects.get(user=request.user)
+    cart, created = Cart.objects.get_or_create(
+            user=request.user
+        )
 
     product = get_object_or_404(Product, id=product_id)
 
